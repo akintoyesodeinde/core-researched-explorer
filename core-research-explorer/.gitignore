@@ -1,0 +1,62 @@
+# Compiled output
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# Node dependencies
+/node_modules
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log*
+/libpeerconnection.log
+testem.log
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.vscode/
+.history/
+*.suo
+*.sln
+
+# Caches and test artifacts
+/.angular/
+.sass-cache/
+.eslintcache
+/connect.lock
+/coverage
+/test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+/typings
+__screenshots__/
+
+# Environment files containing secrets
+.env
+.env.*
+!.env.example
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# System files
+.DS_Store
+Thumbs.db
