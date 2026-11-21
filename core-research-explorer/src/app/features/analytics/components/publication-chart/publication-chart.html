@@ -13,17 +13,39 @@
   </p>
 
   @if (analytics().counts.length) {
-    <div class="chart-statistics" aria-label="Chart coverage">
-      <span
-        ><strong>{{ analytics().includedCount }}</strong> with a valid year</span
+    <div class="chart-toolbar">
+      <div class="chart-statistics" aria-label="Chart coverage">
+        <span
+          ><strong>{{ analytics().includedCount }}</strong> with a valid year</span
+        >
+        <span
+          ><strong>{{ analytics().counts.length }}</strong> distinct years</span
+        >
+        <span
+          ><strong>{{ analytics().missingCount }}</strong> excluded</span
+        >
+        @if (yearSpanLabel(); as span) {
+          <span
+            >Range: <strong>{{ span }}</strong></span
+          >
+        }
+        @if (analytics().doiCoverageCount) {
+          <span
+            ><strong>{{ analytics().doiCoverageCount }}</strong> with DOI</span
+          >
+        }
+      </div>
+
+      <button
+        type="button"
+        class="table-toggle"
+        [attr.aria-expanded]="showDataTable()"
+        (click)="toggleDataTable()"
       >
-      <span
-        ><strong>{{ analytics().counts.length }}</strong> distinct years</span
-      >
-      <span
-        ><strong>{{ analytics().missingCount }}</strong> excluded</span
-      >
+        {{ showDataTable() ? 'Hide year table' : 'Show year table' }}
+      </button>
     </div>
+
     <div
       #chart
       class="year-chart"
@@ -41,21 +63,40 @@
       "
     ></div>
 
-    <table class="sr-only">
+    <p class="interaction-hint">
+      Select any bar or year in the table to filter the retrieved paper list by publication year.
+    </p>
+
+    <table [class.sr-only]="!showDataTable()" class="year-table">
       <caption>
         Publication counts by year for the retrieved result set
       </caption>
       <thead>
         <tr>
-          <th>Year</th>
-          <th>Paper count</th>
+          <th scope="col">Year</th>
+          <th scope="col">Paper count</th>
+          @if (showDataTable()) {
+            <th scope="col">Filter</th>
+          }
         </tr>
       </thead>
       <tbody>
         @for (item of analytics().counts; track item.year) {
-          <tr>
+          <tr [class.active-row]="selectedYear() === item.year">
             <td>{{ item.year }}</td>
             <td>{{ item.count }}</td>
+            @if (showDataTable()) {
+              <td>
+                <button
+                  type="button"
+                  class="year-filter-btn"
+                  [attr.aria-pressed]="selectedYear() === item.year"
+                  (click)="toggleYearSelection(item.year)"
+                >
+                  {{ selectedYear() === item.year ? 'Clear' : 'Filter' }}
+                </button>
+              </td>
+            }
           </tr>
         }
       </tbody>

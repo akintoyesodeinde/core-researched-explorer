@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { App } from './app';
 import { CORE_API_CONFIG } from './core/models/core-api.config';
 import { ResearchStore } from './features/research-search/research.store';
@@ -10,6 +11,7 @@ describe('App', () => {
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         {
@@ -69,6 +71,81 @@ describe('App', () => {
     expect(compiled.querySelector('.exclusion-note')?.textContent).toContain('1 paper(s)');
   });
 
+  it('filters retrieved papers by publication year and allows clearing the filter', async () => {
+    const fixture = TestBed.createComponent(App);
+    const store = fixture.debugElement.injector.get(ResearchStore);
+    const http = TestBed.inject(HttpTestingController);
+
+    store.search('drone', 10);
+    http
+      .expectOne((request) => request.url === '/api/core/works')
+      .flush({
+        totalHits: 3,
+        results: [
+          { id: 1, title: 'Paper 2024', yearPublished: 2024 },
+          { id: 2, title: 'Paper 2022', yearPublished: 2022 },
+          { id: 3, title: 'Undated Paper', yearPublished: null },
+        ],
+      });
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelectorAll('.paper-card')).toHaveLength(3);
+
+    (compiled.querySelector('.table-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const filterButtons = compiled.querySelectorAll('.year-filter-btn');
+    (filterButtons[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.active-filter')?.textContent).toContain('2024');
+    expect(compiled.querySelectorAll('.paper-card')).toHaveLength(1);
+    expect(compiled.querySelector('.paper-card h3')?.textContent).toContain('Paper 2024');
+
+    (compiled.querySelector('.clear-filter') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('.active-filter')).toBeNull();
+    expect(compiled.querySelectorAll('.paper-card')).toHaveLength(3);
+  });
+
+  it('sorts retrieved papers by newest or oldest publication year', async () => {
+    const fixture = TestBed.createComponent(App);
+    const store = fixture.debugElement.injector.get(ResearchStore);
+    const http = TestBed.inject(HttpTestingController);
+
+    store.search('drone', 10);
+    http
+      .expectOne((request) => request.url === '/api/core/works')
+      .flush({
+        totalHits: 3,
+        results: [
+          { id: 1, title: 'Mid Paper', yearPublished: 2022 },
+          { id: 2, title: 'No Year Paper', yearPublished: null },
+          { id: 3, title: 'Latest Paper', yearPublished: 2025 },
+        ],
+      });
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const sortSelect = compiled.querySelector('#sort-order') as HTMLSelectElement;
+
+    sortSelect.value = 'newest';
+    sortSelect.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    let titles = [...compiled.querySelectorAll('.paper-card h3')].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(titles).toEqual(['Latest Paper', 'Mid Paper', 'No Year Paper']);
+
+    sortSelect.value = 'oldest';
+    sortSelect.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    titles = [...compiled.querySelectorAll('.paper-card h3')].map((el) => el.textContent?.trim());
+    expect(titles).toEqual(['Mid Paper', 'Latest Paper', 'No Year Paper']);
+  });
+
   it('shows loading then an empty state', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
@@ -123,7 +200,12 @@ describe('App', () => {
       .flush({
         totalHits: 1,
         results: [
-          { id: 10, title: 'Long Abstract Paper', abstract: longAbstract, yearPublished: 2024 },
+          {
+            id: 10,
+            title: 'Long Abstract Paper',
+            abstract: longAbstract,
+            yearPublished: 2024,
+          },
         ],
       });
 
@@ -258,5 +340,54 @@ describe('App', () => {
         totalHits: 1,
         results: [{ id: 1, title: 'Keyboard result', yearPublished: 2024 }],
       });
+  });
+
+  it('restores and runs a valid search from URL query parameters on initialization', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({
+                q: 'drone AND sensor',
+                limit: '20',
+                offset: '10',
+              }),
+            },
+          },
+        },
+        {
+          provide: CORE_API_CONFIG,
+          useValue: {
+            coreBaseUrl: '/api/core/works',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const http = TestBed.inject(HttpTestingController);
+    const req = http.expectOne((request) => request.url === '/api/core/works');
+    expect(req.request.params.get('q')).toBe('drone AND sensor');
+    expect(req.request.params.get('limit')).toBe('20');
+    expect(req.request.params.get('offset')).toBe('10');
+    req.flush({
+      totalHits: 40,
+      results: [{ id: 11, title: 'Shared URL paper', yearPublished: 2024 }],
+    });
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect((compiled.querySelector('#query') as HTMLInputElement).value).toBe('drone AND sensor');
+    expect(compiled.querySelector('.paper-card h3')?.textContent).toContain('Shared URL paper');
   });
 });

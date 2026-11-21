@@ -5,10 +5,18 @@ export interface PublicationYearCount {
   count: number;
 }
 
+export interface PublicationYearRange {
+  min: number;
+  max: number;
+}
+
 export interface PublicationYearAnalytics {
   counts: PublicationYearCount[];
   includedCount: number;
   missingCount: number;
+  yearRange?: PublicationYearRange | null;
+  peakYear?: PublicationYearCount | null;
+  doiCoverageCount?: number;
 }
 
 const EARLIEST_PLAUSIBLE_PUBLICATION_YEAR = 1800;
@@ -19,8 +27,13 @@ export function aggregatePublicationYears(
 ): PublicationYearAnalytics {
   const counts = new Map<number, number>();
   let missingCount = 0;
+  let doiCoverageCount = 0;
 
   for (const paper of papers) {
+    if (typeof paper.doi === 'string' && paper.doi.trim()) {
+      doiCoverageCount++;
+    }
+
     const year = paper.publishedYear;
     if (
       typeof year !== 'number' ||
@@ -38,9 +51,23 @@ export function aggregatePublicationYears(
     .map(([year, count]) => ({ year, count }))
     .sort((left, right) => left.year - right.year);
 
+  const yearRange = sortedCounts.length
+    ? { min: sortedCounts[0].year, max: sortedCounts[sortedCounts.length - 1].year }
+    : null;
+
+  let peakYear: PublicationYearCount | null = null;
+  for (const entry of sortedCounts) {
+    if (!peakYear || entry.count >= peakYear.count) {
+      peakYear = entry;
+    }
+  }
+
   return {
     counts: sortedCounts,
     includedCount: papers.length - missingCount,
     missingCount,
+    yearRange,
+    peakYear,
+    doiCoverageCount,
   };
 }

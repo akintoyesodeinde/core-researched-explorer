@@ -1,4 +1,14 @@
-import { Component, ElementRef, OnDestroy, ViewChild, effect, input, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  ViewChild,
+  computed,
+  effect,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import type { ECharts } from 'echarts/core';
 import { PublicationYearAnalytics } from '../../../../shared/utils/publication-year.utils';
 
@@ -11,8 +21,16 @@ export class PublicationChart implements OnDestroy {
   readonly analytics = input.required<PublicationYearAnalytics>();
   readonly retrievedCount = input.required<number>();
   readonly query = input.required<string>();
+  readonly selectedYear = input<number | null>(null);
+  readonly yearSelected = output<number | null>();
 
   protected readonly chartReady = signal(false);
+  protected readonly showDataTable = signal(false);
+  protected readonly yearSpanLabel = computed(() => {
+    const range = this.analytics().yearRange;
+    if (!range) return null;
+    return range.min === range.max ? String(range.min) : `${range.min}–${range.max}`;
+  });
 
   @ViewChild('chart')
   private set chartElement(value: ElementRef<HTMLDivElement> | undefined) {
@@ -26,7 +44,8 @@ export class PublicationChart implements OnDestroy {
   private destroyed = false;
   private readonly updateChart = effect(() => {
     const analytics = this.analytics();
-    this.renderChart(analytics);
+    const selectedYear = this.selectedYear();
+    this.renderChart(analytics, selectedYear);
   });
 
   ngOnDestroy(): void {
@@ -34,6 +53,14 @@ export class PublicationChart implements OnDestroy {
     this.updateChart.destroy();
     this.resizeObserver?.disconnect();
     this.chart?.dispose();
+  }
+
+  protected toggleDataTable(): void {
+    this.showDataTable.update((visible) => !visible);
+  }
+
+  protected toggleYearSelection(year: number): void {
+    this.yearSelected.emit(this.selectedYear() === year ? null : year);
   }
 
   private async initializeChart(element: HTMLDivElement): Promise<void> {
@@ -59,11 +86,17 @@ export class PublicationChart implements OnDestroy {
       components.TooltipComponent,
     ]);
     this.chart = echarts.init(element, undefined, { renderer: 'svg' });
+    this.chart.on('click', (params: { name?: string }) => {
+      const year = Number(params.name);
+      if (Number.isInteger(year)) {
+        this.toggleYearSelection(year);
+      }
+    });
     this.initializingHost = undefined;
-    this.renderChart(this.analytics());
+    this.renderChart(this.analytics(), this.selectedYear());
   }
 
-  private renderChart(analytics: PublicationYearAnalytics): void {
+  private renderChart(analytics: PublicationYearAnalytics, selectedYear: number | null): void {
     if (!this.chart || analytics.counts.length === 0) return;
 
     this.chart.setOption(
@@ -100,9 +133,16 @@ export class PublicationChart implements OnDestroy {
         series: [
           {
             type: 'bar',
-            data: analytics.counts.map(({ count }) => count),
+            cursor: 'pointer',
+            data: analytics.counts.map(({ year, count }) => ({
+              value: count,
+              itemStyle: {
+                color:
+                  selectedYear === null ? '#176b87' : year === selectedYear ? '#0b3954' : '#9ab7c4',
+                borderRadius: [5, 5, 0, 0],
+              },
+            })),
             barMaxWidth: 44,
-            itemStyle: { color: '#176b87', borderRadius: [5, 5, 0, 0] },
             emphasis: { itemStyle: { color: '#0f526b' } },
           },
         ],

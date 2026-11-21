@@ -23,12 +23,49 @@ describe('PublicationChart', () => {
       counts: [{ year: 2024, count: 2 }],
       includedCount: 2,
       missingCount: 1,
+      yearRange: { min: 2024, max: 2024 },
+      doiCoverageCount: 1,
     });
 
     expect(element.querySelector('.scope-note')?.textContent).toContain('3 retrieved papers');
     expect(element.querySelector('.scope-note')?.textContent).toContain('not all matching papers');
     expect(element.querySelector('table')?.textContent).toContain('2024');
     expect(element.querySelector('.exclusion-note')?.textContent).toContain('1 paper(s) excluded');
+    expect(element.querySelector('.chart-statistics')?.textContent).toContain('1 with DOI');
+  });
+
+  it('toggles a visible accessible year table and emits year filter selections', () => {
+    const emitted: (number | null)[] = [];
+    fixture.componentInstance.yearSelected.subscribe((value) => emitted.push(value));
+
+    const element = render({
+      counts: [
+        { year: 2022, count: 1 },
+        { year: 2024, count: 2 },
+      ],
+      includedCount: 3,
+      missingCount: 0,
+      yearRange: { min: 2022, max: 2024 },
+    });
+
+    const table = element.querySelector('table') as HTMLTableElement;
+    expect(table.classList.contains('sr-only')).toBe(true);
+
+    const toggle = element.querySelector('.table-toggle') as HTMLButtonElement;
+    toggle.click();
+    fixture.detectChanges();
+    expect(table.classList.contains('sr-only')).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    const filterButtons = element.querySelectorAll('.year-filter-btn');
+    expect(filterButtons).toHaveLength(2);
+    (filterButtons[1] as HTMLButtonElement).click();
+    expect(emitted).toEqual([2024]);
+
+    fixture.componentRef.setInput('selectedYear', 2024);
+    fixture.detectChanges();
+    (element.querySelectorAll('.year-filter-btn')[1] as HTMLButtonElement).click();
+    expect(emitted).toEqual([2024, null]);
   });
 
   it('renders an informative empty state when every retrieved year is missing', () => {

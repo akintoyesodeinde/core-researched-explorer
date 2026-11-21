@@ -57,6 +57,19 @@
         <p class="section-kicker">Your research set</p>
         <h2 id="results-heading">Results</h2>
       </div>
+
+      @if (store.result(); as result) {
+        @if (result.papers.length > 1) {
+          <div class="sort-control">
+            <label for="sort-order">Sort retrieved</label>
+            <select id="sort-order" [value]="sortOrder()" (change)="onSortChange($event)">
+              <option value="relevance">Relevance</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </div>
+        }
+      }
     </div>
 
     @if (store.isLoading()) {
@@ -73,7 +86,7 @@
         <p>Try broadening the Boolean query or removing one of the operators.</p>
       </div>
     } @else if (store.result(); as result) {
-      <p class="results-summary">
+      <p class="results-summary" aria-live="polite">
         Retrieved {{ result.retrievedCount }} paper(s) for <strong>{{ result.query }}</strong>
         @if (result.offset > 0) {
           (page {{ store.currentPage() }}, offset {{ result.offset }})
@@ -88,10 +101,24 @@
         [analytics]="publicationAnalytics()"
         [retrievedCount]="result.retrievedCount"
         [query]="result.query"
+        [selectedYear]="selectedYear()"
+        (yearSelected)="onYearSelected($event)"
       />
 
+      @if (selectedYear(); as activeYear) {
+        <div class="active-filter" role="status" aria-live="polite">
+          <span>
+            Showing {{ displayedPapers().length }} of {{ result.retrievedCount }} retrieved paper(s)
+            published in <strong>{{ activeYear }}</strong>.
+          </span>
+          <button type="button" class="clear-filter" (click)="clearYearFilter()">
+            Clear year filter
+          </button>
+        </div>
+      }
+
       <div class="paper-grid">
-        @for (paper of result.papers; track paperKey(paper, $index)) {
+        @for (paper of displayedPapers(); track paperKey(paper, $index)) {
           @let key = paperKey(paper, $index);
           @let doiUrl = formatDoiUrl(paper.doi);
           <article class="paper-card">
