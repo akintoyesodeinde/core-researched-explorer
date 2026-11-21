@@ -1,3 +1,4 @@
+import { Location } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -20,6 +21,7 @@ export type PaperSortOrder = 'relevance' | 'newest' | 'oldest';
 export class App implements OnInit {
   private readonly router = inject(Router, { optional: true });
   private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly location = inject(Location, { optional: true });
 
   protected readonly title = signal('CORE Research Explorer');
   protected readonly store = inject(ResearchStore);
@@ -58,7 +60,12 @@ export class App implements OnInit {
   });
 
   ngOnInit(): void {
-    const params = this.route?.snapshot.queryParamMap;
+    const snapshotParams = this.route?.snapshot.queryParamMap;
+    const params = snapshotParams?.has('q')
+      ? snapshotParams
+      : this.router && this.location
+        ? this.router.parseUrl(this.location.path(true)).queryParamMap
+        : snapshotParams;
     if (!params) return;
 
     const queryParam = params.get('q')?.trim() ?? '';
