@@ -15,4 +15,6 @@ export interface ResearchSearchResult {
   totalHits: number | null;
   retrievedCount: number;
   query: string;
+  limit: number;
+  offset: number;
 }

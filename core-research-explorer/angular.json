@@ -3,9 +3,7 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "schematicCollections": [
-      "angular-eslint"
-    ],
+    "schematicCollections": ["angular-eslint"],
     "analytics": "83adacd3-b9d8-41da-8354-74c837bdee4a"
   },
   "newProjectRoot": "projects",
@@ -72,7 +70,10 @@
           "defaultConfiguration": "development"
         },
         "test": {
-          "builder": "@angular/build:unit-test"
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "runnerConfig": "vitest-base.config.mts"
+          }
         },
         "lint": {
           "builder": "@angular-eslint/builder:lint",

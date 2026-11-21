@@ -3,21 +3,34 @@ import { pathToFileURL } from 'node:url';
 
 const DEFAULT_CORE_URL = 'https://api.core.ac.uk/v3/search/works';
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const MAX_LIMIT = 50;
+const MAX_OFFSET = 1000;
+const MAX_QUERY_LENGTH = 500;
+
+const BASE_SECURITY_HEADERS = {
+  'cache-control': 'no-store',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+};
 
 function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
-    'cache-control': 'no-store',
+    ...BASE_SECURITY_HEADERS,
     'content-type': 'application/json; charset=utf-8',
-    'x-content-type-options': 'nosniff',
     ...headers,
   });
   response.end(JSON.stringify(payload));
 }
 
-function parsePositiveInteger(value, defaultValue) {
+function parseNonNegativeInteger(value, defaultValue) {
   if (value === null) return defaultValue;
   if (!/^\d+$/.test(value)) return null;
-  return Number(value);
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function isJsonContentType(contentType) {
+  return typeof contentType === 'string' && contentType.toLowerCase().includes('json');
 }
 
 export function createCoreProxyServer({
@@ -26,13 +39,19 @@ export function createCoreProxyServer({
   fetchImpl = globalThis.fetch,
   requestTimeoutMs = Number(process.env.CORE_REQUEST_TIMEOUT_MS ?? 10_000),
 } = {}) {
+  const normalizedApiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+
   return createServer(async (request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
 
     if (requestUrl.pathname === '/health') {
+      if (request.method !== 'GET') {
+        sendJson(response, 405, { error: 'Method not allowed.' }, { allow: 'GET' });
+        return;
+      }
       sendJson(response, 200, {
         status: 'ok',
-        coreConfigured: Boolean(apiKey),
+        coreConfigured: Boolean(normalizedApiKey),
       });
       return;
     }
@@ -47,7 +66,7 @@ export function createCoreProxyServer({
       return;
     }
 
-    if (!apiKey) {
+    if (!normalizedApiKey) {
       sendJson(response, 503, {
         error: 'CORE live search is not configured on the server.',
         code: 'CORE_API_KEY_MISSING',
@@ -56,19 +75,25 @@ export function createCoreProxyServer({
     }
 
     const query = requestUrl.searchParams.get('q')?.trim() ?? '';
-    const limit = parsePositiveInteger(requestUrl.searchParams.get('limit'), 10);
-    const offset = parsePositiveInteger(requestUrl.searchParams.get('offset'), 0);
+    const limit = parseNonNegativeInteger(requestUrl.searchParams.get('limit'), 10);
+    const offset = parseNonNegativeInteger(requestUrl.searchParams.get('offset'), 0);
 
-    if (!query || query.length > 500) {
-      sendJson(response, 400, { error: 'Query must contain between 1 and 500 characters.' });
+    if (!query || query.length > MAX_QUERY_LENGTH) {
+      sendJson(response, 400, {
+        error: `Query must contain between 1 and ${MAX_QUERY_LENGTH} characters.`,
+      });
       return;
     }
-    if (limit === null || limit < 1 || limit > 50) {
-      sendJson(response, 400, { error: 'Limit must be an integer between 1 and 50.' });
+    if (limit === null || limit < 1 || limit > MAX_LIMIT) {
+      sendJson(response, 400, {
+        error: `Limit must be an integer between 1 and ${MAX_LIMIT}.`,
+      });
       return;
     }
-    if (offset !== 0) {
-      sendJson(response, 400, { error: 'Only offset 0 is currently supported.' });
+    if (offset === null || offset < 0 || offset > MAX_OFFSET) {
+      sendJson(response, 400, {
+        error: `Offset must be an integer between 0 and ${MAX_OFFSET}.`,
+      });
       return;
     }
 
@@ -81,7 +106,7 @@ export function createCoreProxyServer({
       const upstreamResponse = await fetchImpl(upstreamUrl, {
         headers: {
           accept: 'application/json',
-          authorization: `Bearer ${apiKey}`,
+          authorization: `Bearer ${normalizedApiKey}`,
         },
         signal: AbortSignal.timeout(
           Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0 ? requestTimeoutMs : 10_000,
@@ -95,11 +120,23 @@ export function createCoreProxyServer({
       }
 
       const retryAfter = upstreamResponse.headers.get('retry-after');
+      const extraHeaders = retryAfter ? { 'retry-after': retryAfter } : {};
+      const contentType = upstreamResponse.headers.get('content-type');
+
+      if (!upstreamResponse.ok && contentType && !isJsonContentType(contentType)) {
+        sendJson(
+          response,
+          upstreamResponse.status,
+          { error: 'CORE returned an unexpected non-JSON error response.' },
+          extraHeaders,
+        );
+        return;
+      }
+
       response.writeHead(upstreamResponse.status, {
-        'cache-control': 'no-store',
+        ...BASE_SECURITY_HEADERS,
         'content-type': 'application/json; charset=utf-8',
-        'x-content-type-options': 'nosniff',
-        ...(retryAfter ? { 'retry-after': retryAfter } : {}),
+        ...extraHeaders,
       });
       response.end(body || '{}');
     } catch (error) {

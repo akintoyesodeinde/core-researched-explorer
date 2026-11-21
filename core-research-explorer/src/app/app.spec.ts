@@ -111,6 +111,115 @@ describe('App', () => {
     expect(compiled.querySelector('.state h3')?.textContent).toContain('No papers found');
   });
 
+  it('expands and collapses long abstracts on paper cards', async () => {
+    const fixture = TestBed.createComponent(App);
+    const store = fixture.debugElement.injector.get(ResearchStore);
+    const http = TestBed.inject(HttpTestingController);
+    const longAbstract = 'A'.repeat(260);
+
+    store.search('drone', 10);
+    http
+      .expectOne((request) => request.url === '/api/core/works')
+      .flush({
+        totalHits: 1,
+        results: [
+          { id: 10, title: 'Long Abstract Paper', abstract: longAbstract, yearPublished: 2024 },
+        ],
+      });
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const toggle = compiled.querySelector('.abstract-toggle') as HTMLButtonElement;
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent?.trim()).toBe('Show more');
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent?.trim()).toBe('Show less');
+    expect(compiled.querySelector('.abstract--expanded')).toBeTruthy();
+  });
+
+  it('re-runs the active search when result count changes after initial search', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const http = TestBed.inject(HttpTestingController);
+
+    const query = compiled.querySelector('#query') as HTMLInputElement;
+    query.value = 'drone AND delivery';
+    query.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const select = compiled.querySelector('#limit') as HTMLSelectElement;
+    select.dispatchEvent(new Event('change'));
+    http.expectNone('/api/core/works');
+
+    const form = compiled.querySelector('form') as HTMLFormElement;
+    form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+
+    const first = http.expectOne((request) => request.url === '/api/core/works');
+    expect(first.request.params.get('limit')).toBe('10');
+    first.flush({
+      totalHits: 30,
+      results: [{ id: 1, title: 'First result', yearPublished: 2024 }],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    select.selectedIndex = 1;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    const second = http.expectOne((request) => request.url === '/api/core/works');
+    expect(second.request.params.get('limit')).toBe('20');
+    expect(second.request.params.get('offset')).toBe('0');
+    second.flush({
+      totalHits: 30,
+      results: [{ id: 1, title: 'First result', yearPublished: 2024 }],
+    });
+  });
+
+  it('navigates between result pages using pagination controls', async () => {
+    const fixture = TestBed.createComponent(App);
+    const store = fixture.debugElement.injector.get(ResearchStore);
+    const http = TestBed.inject(HttpTestingController);
+
+    store.search('drone', 10);
+    http
+      .expectOne((request) => request.url === '/api/core/works')
+      .flush({
+        totalHits: 25,
+        results: [{ id: 1, title: 'Page 1 Paper', yearPublished: 2024 }],
+      });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const buttons = compiled.querySelectorAll('.pagination .page-button');
+    expect(buttons).toHaveLength(2);
+    const prevButton = buttons[0] as HTMLButtonElement;
+    const nextButton = buttons[1] as HTMLButtonElement;
+    expect(prevButton.disabled).toBe(true);
+    expect(nextButton.disabled).toBe(false);
+
+    nextButton.click();
+    fixture.detectChanges();
+
+    const nextReq = http.expectOne((request) => request.url === '/api/core/works');
+    expect(nextReq.request.params.get('offset')).toBe('10');
+    nextReq.flush({
+      totalHits: 25,
+      results: [{ id: 11, title: 'Page 2 Paper', yearPublished: 2023 }],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(compiled.querySelector('.page-indicator')?.textContent).toContain('Page 2');
+  });
+
   it('shows a clear error and retry control', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();

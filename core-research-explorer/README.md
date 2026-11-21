@@ -11,7 +11,7 @@ server-side proxy so the CORE API key is never included in browser code.
 
 ## Configure live CORE search
 
-Create an untracked `.env` file and assign your actual CORE API key to `CORE_API_KEY`. `.env` is
+Copy `.env.example` to an untracked `.env` file and assign your actual CORE API key to `CORE_API_KEY`. `.env` is
 ignored by Git. Do not put the key in Angular environment files, frontend source, or a committed
 configuration file.
 
@@ -60,6 +60,6 @@ development proxy is not a production reverse proxy.
 
 - A successful authenticated CORE response still depends on a valid account, key, quota, and current
   upstream availability.
-- The application requests at most 50 records and currently supports only the first result page.
+- The application requests at most 50 records per page with bounded pagination up to offset 1000.
 - Live Boolean grammar and the maximum supported CORE page size must still be confirmed with a
   successful authenticated request.

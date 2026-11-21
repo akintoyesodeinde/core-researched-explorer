@@ -24,7 +24,12 @@
 
       <div class="form-field limit-field">
         <label for="limit">Papers</label>
-        <select id="limit" formControlName="limit" aria-label="Number of papers">
+        <select
+          id="limit"
+          formControlName="limit"
+          aria-label="Number of papers"
+          (change)="onLimitChange()"
+        >
           @for (count of resultCounts; track count) {
             <option [ngValue]="count">{{ count }}</option>
           }
@@ -69,7 +74,11 @@
       </div>
     } @else if (store.result(); as result) {
       <p class="results-summary">
-        Retrieved {{ result.retrievedCount }} paper(s) for <strong>{{ result.query }}</strong>.
+        Retrieved {{ result.retrievedCount }} paper(s) for <strong>{{ result.query }}</strong>
+        @if (result.offset > 0) {
+          (page {{ store.currentPage() }}, offset {{ result.offset }})
+        }
+        .
         @if (result.totalHits !== null) {
           CORE reported {{ result.totalHits }} total match(es).
         }
@@ -82,7 +91,9 @@
       />
 
       <div class="paper-grid">
-        @for (paper of result.papers; track paper.id ?? $index) {
+        @for (paper of result.papers; track paperKey(paper, $index)) {
+          @let key = paperKey(paper, $index);
+          @let doiUrl = formatDoiUrl(paper.doi);
           <article class="paper-card">
             @if (paper.title) {
               <h3>{{ paper.title }}</h3>
@@ -101,9 +112,21 @@
               <p class="publisher">{{ paper.publisher }}</p>
             }
             @if (paper.abstract) {
-              <p class="abstract">{{ paper.abstract }}</p>
+              <p class="abstract" [class.abstract--expanded]="isAbstractExpanded(key)">
+                {{ paper.abstract }}
+              </p>
+              @if (isAbstractExpandable(paper.abstract)) {
+                <button
+                  type="button"
+                  class="abstract-toggle"
+                  [attr.aria-expanded]="isAbstractExpanded(key)"
+                  (click)="toggleAbstract(key)"
+                >
+                  {{ isAbstractExpanded(key) ? 'Show less' : 'Show more' }}
+                </button>
+              }
             }
-            @if (paper.sourceUrl || paper.downloadUrl || paper.doi) {
+            @if (paper.sourceUrl || paper.downloadUrl || doiUrl) {
               <div class="paper-links">
                 @if (paper.sourceUrl) {
                   <a [href]="paper.sourceUrl" target="_blank" rel="noopener noreferrer"
@@ -115,21 +138,36 @@
                     >Download</a
                   >
                 }
-                @if (paper.doi) {
-                  <a
-                    [href]="
-                      paper.doi.startsWith('http') ? paper.doi : 'https://doi.org/' + paper.doi
-                    "
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >DOI</a
-                  >
+                @if (doiUrl) {
+                  <a [href]="doiUrl" target="_blank" rel="noopener noreferrer">DOI</a>
                 }
               </div>
             }
           </article>
         }
       </div>
+
+      @if (store.canGoPrevious() || store.canGoNext()) {
+        <nav class="pagination" aria-label="Search results pagination">
+          <button
+            type="button"
+            class="page-button"
+            [disabled]="!store.canGoPrevious()"
+            (click)="goToPreviousPage()"
+          >
+            Previous
+          </button>
+          <span class="page-indicator">Page {{ store.currentPage() }}</span>
+          <button
+            type="button"
+            class="page-button"
+            [disabled]="!store.canGoNext()"
+            (click)="goToNextPage()"
+          >
+            Next
+          </button>
+        </nav>
+      }
     } @else {
       <div class="state">
         <h3>Ready to search</h3>

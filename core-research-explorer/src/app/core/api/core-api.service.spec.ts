@@ -69,20 +69,48 @@ describe('CoreApiService', () => {
     });
     expect(result!.totalHits).toBe(1);
     expect(result!.query).toBe('drone AND (package OR delivery)');
+    expect(result!.limit).toBe(10);
+    expect(result!.offset).toBe(0);
   });
 
-  it('bounds requested result counts', () => {
-    let capturedCount = 0;
-    service.search('drone', 500).subscribe((result) => {
-      capturedCount = result.retrievedCount;
+  it('bounds requested result counts and pagination offsets', () => {
+    let capturedResult: ResearchSearchResult | undefined;
+    service.search('drone', 500, 2500).subscribe((result) => {
+      capturedResult = result;
     });
+    const request = http.expectOne((candidate) => candidate.url === '/api/core/works');
+    expect(request.request.params.get('limit')).toBe('50');
+    expect(request.request.params.get('offset')).toBe('1000');
+    request.flush({
+      totalHits: 0,
+      results: [],
+    });
+    expect(capturedResult?.retrievedCount).toBe(0);
+    expect(capturedResult?.limit).toBe(50);
+    expect(capturedResult?.offset).toBe(1000);
+  });
+
+  it('filters out non-HTTP(S) source and download URLs', () => {
+    let result: ResearchSearchResult | undefined;
+    service.search('security', 10).subscribe((value) => (result = value));
+
     http
       .expectOne((candidate) => candidate.url === '/api/core/works')
       .flush({
-        totalHits: 0,
-        results: [],
+        totalHits: 1,
+        results: [
+          {
+            id: 99,
+            title: 'URL safety paper',
+            sourceUrl: 'javascript:alert(1)',
+            downloadUrl: 'data:text/html,unsafe',
+            links: [{ url: 'https://core.ac.uk/works/99' }],
+          },
+        ],
       });
-    expect(capturedCount).toBe(0);
+
+    expect(result!.papers[0].sourceUrl).toBe('https://core.ac.uk/works/99');
+    expect(result!.papers[0].downloadUrl).toBeNull();
   });
 
   it('maps missing and malformed paper fields without crashing', () => {

@@ -1,33 +1,49 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Observable, map, timeout } from 'rxjs';
 import { CORE_API_CONFIG, CoreApiConfig } from '../models/core-api.config';
 import { ResearchPaper, ResearchSearchResult } from '../models/research-paper.model';
+
+export const MAX_SEARCH_LIMIT = 50;
+export const MAX_SEARCH_OFFSET = 1000;
+export const SEARCH_TIMEOUT_MS = 15_000;
 
 @Injectable({ providedIn: 'root' })
 export class CoreApiService {
   private readonly http = inject(HttpClient);
   private readonly config = inject<CoreApiConfig>(CORE_API_CONFIG);
 
-  search(query: string, limit: number): Observable<ResearchSearchResult> {
+  search(query: string, limit: number, offset = 0): Observable<ResearchSearchResult> {
     const safeLimit = this.boundLimit(limit);
+    const safeOffset = this.boundOffset(offset);
 
     const params = new HttpParams()
       .set('q', query)
-      .set('offset', '0')
+      .set('offset', String(safeOffset))
       .set('limit', String(safeLimit));
 
-    return this.http
-      .get<unknown>(this.config.coreBaseUrl, { params })
-      .pipe(map((payload) => this.mapResponse(payload, query, safeLimit)));
+    return this.http.get<unknown>(this.config.coreBaseUrl, { params }).pipe(
+      timeout(SEARCH_TIMEOUT_MS),
+      map((payload) => this.mapResponse(payload, query, safeLimit, safeOffset)),
+    );
   }
 
   private boundLimit(limit: number): number {
     if (!Number.isFinite(limit)) return 10;
-    return Math.min(50, Math.max(1, Math.floor(limit)));
+    return Math.min(MAX_SEARCH_LIMIT, Math.max(1, Math.floor(limit)));
   }
 
-  private mapResponse(payload: unknown, query: string, limit: number): ResearchSearchResult {
+  private boundOffset(offset: number): number {
+    if (!Number.isFinite(offset)) return 0;
+    return Math.min(MAX_SEARCH_OFFSET, Math.max(0, Math.floor(offset)));
+  }
+
+  private mapResponse(
+    payload: unknown,
+    query: string,
+    limit: number,
+    offset: number,
+  ): ResearchSearchResult {
     const record = this.asRecord(payload);
     const rawResults = Array.isArray(record?.['results']) ? record['results'] : [];
     const totalHits = this.asFiniteNumber(record?.['totalHits'] ?? record?.['total_hits']);
@@ -41,6 +57,8 @@ export class CoreApiService {
       totalHits,
       retrievedCount: papers.length,
       query,
+      limit,
+      offset,
     };
   }
 
@@ -50,7 +68,7 @@ export class CoreApiService {
     const links = Array.isArray(record['links'])
       ? record['links'].map((link) => this.asRecord(link)).filter((link) => link !== null)
       : [];
-    const sourceUrl = this.firstString([
+    const sourceUrl = this.firstSafeHttpUrl([
       record['sourceUrl'],
       record['source_url'],
       ...links.map((link) => link['url']),
@@ -58,7 +76,7 @@ export class CoreApiService {
       ...this.asStringArray(record['source_fulltext_urls']),
     ]);
     const doi = this.firstString([record['doi']]);
-    const downloadUrl = this.firstString([
+    const downloadUrl = this.firstSafeHttpUrl([
       record['downloadUrl'],
       record['download_url'],
       ...this.asStringArray(record['sourceFulltextUrls']),
@@ -124,6 +142,23 @@ export class CoreApiService {
     return Array.isArray(value)
       ? value.filter((item): item is string => typeof item === 'string')
       : [];
+  }
+
+  private firstSafeHttpUrl(values: unknown[]): string | null {
+    for (const value of values) {
+      if (typeof value !== 'string') continue;
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          return trimmed;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   private firstString(values: unknown[]): string | null {
